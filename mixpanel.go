@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -48,6 +49,7 @@ type Mixpanel interface {
 type mixpanel struct {
 	Client *http.Client
 	Token  string
+	Secret string
 	ApiURL string
 }
 
@@ -159,18 +161,18 @@ func (m *mixpanel) send(eventType string, params interface{}, autoGeolocate bool
 		return err
 	}
 
-	url := m.ApiURL + "/" + eventType + "?data=" + m.to64(data)
-
-	if autoGeolocate {
-		url += "&ip=1"
-	}
+	url := m.ApiURL + "/"
 
 	wrapErr := func(err error) error {
 		return &MixpanelError{URL: url, Err: err}
 	}
 
-	resp, err := m.Client.Get(url)
-
+	request, err := http.NewRequest("POST", url, strings.NewReader("data="+m.to64(data)))
+	if err != nil {
+		return wrapErr(err)
+	}
+	request.Header.Set("Authorization", "Basic "+m.to64([]byte(m.Secret+":")))
+	resp, err := m.Client.Do(request)
 	if err != nil {
 		return wrapErr(err)
 	}
@@ -192,13 +194,13 @@ func (m *mixpanel) send(eventType string, params interface{}, autoGeolocate bool
 
 // New returns the client instance. If apiURL is blank, the default will be used
 // ("https://api.mixpanel.com").
-func New(token, apiURL string) Mixpanel {
-	return NewFromClient(http.DefaultClient, token, apiURL)
+func New(token, secret, apiURL string) Mixpanel {
+	return NewFromClient(http.DefaultClient, token, secret, apiURL)
 }
 
 // Creates a client instance using the specified client instance. This is useful
 // when using a proxy.
-func NewFromClient(c *http.Client, token, apiURL string) Mixpanel {
+func NewFromClient(c *http.Client, token, secret, apiURL string) Mixpanel {
 	if apiURL == "" {
 		apiURL = "https://api.mixpanel.com"
 	}
@@ -206,6 +208,7 @@ func NewFromClient(c *http.Client, token, apiURL string) Mixpanel {
 	return &mixpanel{
 		Client: c,
 		Token:  token,
+		Secret: secret,
 		ApiURL: apiURL,
 	}
 }
