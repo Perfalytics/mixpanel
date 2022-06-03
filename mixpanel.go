@@ -222,6 +222,7 @@ func (m *mixpanel) send(eventType string, params interface{}, autoGeolocate bool
 
 	url := m.ApiURL + "/" + eventType + "?verbose=1"
 
+
 	wrapErr := func(err error) error {
 		return &MixpanelError{URL: url, Err: err}
 	}
@@ -264,8 +265,8 @@ func (m *mixpanel) send(eventType string, params interface{}, autoGeolocate bool
 
 // New returns the client instance. If apiURL is blank, the default will be used
 // ("https://api.mixpanel.com").
-func New(token, apiURL string) Mixpanel {
-	return NewFromClient(http.DefaultClient, token, apiURL)
+func New(token, secret, apiURL string) Mixpanel {
+	return NewFromClient(http.DefaultClient, token, secret, apiURL)
 }
 
 // NewWithSecret returns the client instance using a secret.If apiURL is blank,
