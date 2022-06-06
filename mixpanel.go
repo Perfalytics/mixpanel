@@ -41,6 +41,8 @@ type Mixpanel interface {
 	// Create a mixpanel event using the import api
 	Import(distinctId, eventName string, e *Event) error
 
+	ImportBatch(events []*TrackEvent) error
+
 	// Set properties for a mixpanel user.
 	// Deprecated: Use UpdateUser instead
 	Update(distinctId string, u *Update) error
@@ -76,6 +78,12 @@ type Event struct {
 	Properties map[string]interface{}
 }
 
+type TrackEvent struct {
+	DistinctID string
+	EventName  string
+	Event      *Event
+}
+
 // An update of a user in mixpanel
 type Update struct {
 	// IP-address of the user. Leave empty to use autodetect, or set to "0" to
@@ -109,11 +117,10 @@ func (m *mixpanel) Alias(distinctId, newId string) error {
 	return m.send("track", params, false)
 }
 
-// Track create an event for an existing distinct id
-func (m *mixpanel) Track(distinctId, eventName string, e *Event) error {
+func (m *mixpanel) eventToParams(distinctID, eventName string, e *Event) map[string]interface{} {
 	props := map[string]interface{}{
 		"token":       m.Token,
-		"distinct_id": distinctId,
+		"distinct_id": distinctID,
 	}
 	if e.IP != "" {
 		props["ip"] = e.IP
@@ -131,37 +138,31 @@ func (m *mixpanel) Track(distinctId, eventName string, e *Event) error {
 		"properties": props,
 	}
 
-	autoGeolocate := e.IP == ""
+	return params
+}
 
-	return m.send("track", params, autoGeolocate)
+// Track create an event for an existing distinct id
+func (m *mixpanel) Track(distinctID, eventName string, e *Event) error {
+	autoGeolocate := e.IP == ""
+	return m.send("track", m.eventToParams(distinctID, eventName, e), autoGeolocate)
 }
 
 // Import create an event for an existing distinct id
 // See https://developer.mixpanel.com/docs/importing-old-events
-func (m *mixpanel) Import(distinctId, eventName string, e *Event) error {
-	props := map[string]interface{}{
-		"token":       m.Token,
-		"distinct_id": distinctId,
-	}
-	if e.IP != "" {
-		props["ip"] = e.IP
-	}
-	if e.Timestamp != nil {
-		props["time"] = e.Timestamp.Unix()
-	}
-
-	for key, value := range e.Properties {
-		props[key] = value
-	}
-
-	params := map[string]interface{}{
-		"event":      eventName,
-		"properties": props,
-	}
-
+func (m *mixpanel) Import(distinctID, eventName string, e *Event) error {
 	autoGeolocate := e.IP == ""
+	return m.send("import", m.eventToParams(distinctID, eventName, e), autoGeolocate)
+}
 
-	return m.send("import", params, autoGeolocate)
+// Import batch takes a batch of events and imports them all.
+func (m *mixpanel) ImportBatch(events []*TrackEvent) error {
+	params := []map[string]interface{}{}
+
+	for _, event := range events {
+		params = append(params, m.eventToParams(event.DistinctID, event.EventName, event.Event))
+	}
+
+	return m.send("import", params, false)
 }
 
 // Update updates a user in mixpanel. See
@@ -222,7 +223,6 @@ func (m *mixpanel) send(eventType string, params interface{}, autoGeolocate bool
 
 	url := m.ApiURL + "/" + eventType + "?verbose=1"
 
-
 	wrapErr := func(err error) error {
 		return &MixpanelError{URL: url, Err: err}
 	}
@@ -265,8 +265,8 @@ func (m *mixpanel) send(eventType string, params interface{}, autoGeolocate bool
 
 // New returns the client instance. If apiURL is blank, the default will be used
 // ("https://api.mixpanel.com").
-func New(token, secret, apiURL string) Mixpanel {
-	return NewFromClient(http.DefaultClient, token, secret, apiURL)
+func New(token, apiURL string) Mixpanel {
+	return NewFromClient(http.DefaultClient, token, apiURL)
 }
 
 // NewWithSecret returns the client instance using a secret.If apiURL is blank,

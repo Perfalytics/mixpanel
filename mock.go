@@ -127,6 +127,10 @@ func (m *Mock) Alias(distinctId, newId string) error {
 	return nil
 }
 
+func (m *Mock) ImportBatch(events []*TrackEvent) error {
+	return nil
+}
+
 type MockEvent struct {
 	Event
 	Name string
