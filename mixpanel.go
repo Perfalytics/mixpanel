@@ -151,18 +151,22 @@ func (m *mixpanel) Track(distinctID, eventName string, e *Event) error {
 // See https://developer.mixpanel.com/docs/importing-old-events
 func (m *mixpanel) Import(distinctID, eventName string, e *Event) error {
 	autoGeolocate := e.IP == ""
-	return m.send("import", m.eventToParams(distinctID, eventName, e), autoGeolocate)
+	return m.sendImport(m.eventToParams(distinctID, eventName, e), autoGeolocate)
 }
 
 // Import batch takes a batch of events and imports them all.
 func (m *mixpanel) ImportBatch(events []*TrackEvent) error {
+	if len(events) == 0 {
+		return nil
+	}
+
 	params := []map[string]interface{}{}
 
 	for _, event := range events {
 		params = append(params, m.eventToParams(event.DistinctID, event.EventName, event.Event))
 	}
 
-	return m.send("import", params, false)
+	return m.sendImport(params, false)
 }
 
 // Update updates a user in mixpanel. See
@@ -212,6 +216,57 @@ func (m *mixpanel) UpdateGroup(groupKey, groupId string, u *Update) error {
 
 func (m *mixpanel) to64(data []byte) string {
 	return base64.StdEncoding.EncodeToString(data)
+}
+
+func (m *mixpanel) sendImport(params interface{}, autoGeolocate bool) error {
+	data, err := json.Marshal(params)
+
+	if err != nil {
+		return err
+	}
+
+	url := m.ApiURL + "/import?strict=1"
+
+	wrapErr := func(err error) error {
+		return &MixpanelError{URL: url, Err: err}
+	}
+
+	request, err := http.NewRequest("POST", url, strings.NewReader(string(data)))
+	if err != nil {
+		return wrapErr(err)
+	}
+	if m.Secret != "" {
+		request.SetBasicAuth(m.Secret, "")
+	}
+	request.Header.Set("Content-Type", "application/json")
+	resp, err := m.Client.Do(request)
+	if err != nil {
+		return wrapErr(err)
+	}
+
+	defer resp.Body.Close()
+
+	body, bodyErr := ioutil.ReadAll(resp.Body)
+
+	if bodyErr != nil {
+		return wrapErr(bodyErr)
+	}
+
+	type verboseResponse struct {
+		Error  string `json:"error"`
+		Status string `json:"status"`
+	}
+
+	var jsonBody verboseResponse
+	json.Unmarshal(body, &jsonBody)
+
+	// TODO: If some records in the batch failed, return them so they can be retried.
+	if jsonBody.Status != "OK" {
+		errMsg := fmt.Sprintf("error=%s; status=%s; httpCode=%d", jsonBody.Error, jsonBody.Status, resp.StatusCode)
+		return wrapErr(&ErrTrackFailed{Message: errMsg})
+	}
+
+	return nil
 }
 
 func (m *mixpanel) send(eventType string, params interface{}, autoGeolocate bool) error {
