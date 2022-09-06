@@ -258,7 +258,10 @@ func (m *mixpanel) sendImport(params interface{}, autoGeolocate bool) error {
 	}
 
 	var jsonBody verboseResponse
-	json.Unmarshal(body, &jsonBody)
+	err = json.Unmarshal(body, &jsonBody)
+	if err != nil {
+		return wrapErr(err)
+	}
 
 	// TODO(joey): If some records in the batch failed, return them so they can be retried.
 	if jsonBody.Status != "OK" {
