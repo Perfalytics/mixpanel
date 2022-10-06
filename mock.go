@@ -1,6 +1,7 @@
 package mixpanel
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -39,7 +40,7 @@ func (m *Mock) people(distinctId string) *MockPeople {
 	return p
 }
 
-func (m *Mock) Track(distinctId, eventName string, e *Event) error {
+func (m *Mock) Track(ctx context.Context, distinctId, eventName string, e *Event) error {
 	p := m.people(distinctId)
 	p.Events = append(p.Events, MockEvent{
 		Event: *e,
@@ -48,7 +49,7 @@ func (m *Mock) Track(distinctId, eventName string, e *Event) error {
 	return nil
 }
 
-func (m *Mock) Import(distinctId, eventName string, e *Event) error {
+func (m *Mock) Import(ctx context.Context, distinctId, eventName string, e *Event) error {
 	p := m.people(distinctId)
 	p.Events = append(p.Events, MockEvent{
 		Event: *e,
@@ -93,11 +94,11 @@ func (mp *MockPeople) String() string {
 	return str
 }
 
-func (m *Mock) Update(distinctId string, u *Update) error {
-	return m.UpdateUser(distinctId, u)
+func (m *Mock) Update(ctx context.Context, distinctId string, u *Update) error {
+	return m.UpdateUser(ctx, distinctId, u)
 }
 
-func (m *Mock) UpdateUser(distinctId string, u *Update) error {
+func (m *Mock) UpdateUser(ctx context.Context, distinctId string, u *Update) error {
 	p := m.people(distinctId)
 
 	if u.IP != "" {
@@ -119,15 +120,15 @@ func (m *Mock) UpdateUser(distinctId string, u *Update) error {
 	return nil
 }
 
-func (m *Mock) UpdateGroup(groupKey, groupUser string, u *Update) error {
+func (m *Mock) UpdateGroup(ctx context.Context, groupKey, groupUser string, u *Update) error {
 	return nil
 }
 
-func (m *Mock) Alias(distinctId, newId string) error {
+func (m *Mock) Alias(ctx context.Context, distinctId, newId string) error {
 	return nil
 }
 
-func (m *Mock) ImportBatch(events []*TrackEvent) error {
+func (m *Mock) ImportBatch(ctx context.Context, events []*TrackEvent) error {
 	return nil
 }
 
