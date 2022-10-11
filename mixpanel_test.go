@@ -1,8 +1,10 @@
 package mixpanel
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -15,6 +17,7 @@ var (
 	ts          *httptest.Server
 	client      Mixpanel
 	LastRequest *http.Request
+	LastPost    []byte
 )
 
 func setup() {
@@ -22,6 +25,12 @@ func setup() {
 		w.WriteHeader(200)
 		w.Write([]byte("1\n"))
 		LastRequest = r
+
+		var err error
+		LastPost, err = io.ReadAll(r.Body)
+		if err != nil {
+			panic(err)
+		}
 	}))
 
 	client = NewWithSecret("e3bc4100330c35722740fb8c6f5abddc", "mysecret", ts.URL)
@@ -37,13 +46,24 @@ func decodeURL(url string) string {
 	return string(decoded[:])
 }
 
+func decodeBody() string {
+	data := string(LastPost)
+	if strings.HasPrefix(data, "data=") {
+		data = strings.Split(string(LastPost), "data=")[1]
+		decoded, _ := base64.StdEncoding.DecodeString(data)
+		data = string(decoded)
+	}
+
+	return data
+}
+
 // examples from https://mixpanel.com/help/reference/http
 
 func TestTrack(t *testing.T) {
 	setup()
 	defer teardown()
 
-	client.Track("13793", "Signed Up", &Event{
+	client.Track(context.TODO(), "13793", "Signed Up", &Event{
 		Properties: map[string]interface{}{
 			"Referred By": "Friend",
 		},
@@ -51,9 +71,9 @@ func TestTrack(t *testing.T) {
 
 	want := "{\"event\":\"Signed Up\",\"properties\":{\"Referred By\":\"Friend\",\"distinct_id\":\"13793\",\"token\":\"e3bc4100330c35722740fb8c6f5abddc\"}}"
 
-	if !reflect.DeepEqual(decodeURL(LastRequest.URL.String()), want) {
-		t.Errorf("LastRequest.URL returned %+v, want %+v",
-			decodeURL(LastRequest.URL.String()), want)
+	if !reflect.DeepEqual(decodeBody(), want) {
+		t.Errorf("Post body returned %+v, want %+v",
+			decodeBody(), want)
 	}
 
 	want = "/track"
@@ -71,7 +91,7 @@ func TestImport(t *testing.T) {
 
 	importTime := time.Now().Add(-5 * 24 * time.Hour)
 
-	client.Import("13793", "Signed Up", &Event{
+	client.Import(context.TODO(), "13793", "Signed Up", &Event{
 		Properties: map[string]interface{}{
 			"Referred By": "Friend",
 		},
@@ -80,9 +100,9 @@ func TestImport(t *testing.T) {
 
 	want := fmt.Sprintf("{\"event\":\"Signed Up\",\"properties\":{\"Referred By\":\"Friend\",\"distinct_id\":\"13793\",\"time\":%d,\"token\":\"e3bc4100330c35722740fb8c6f5abddc\"}}", importTime.Unix())
 
-	if !reflect.DeepEqual(decodeURL(LastRequest.URL.String()), want) {
+	if !reflect.DeepEqual(decodeBody(), want) {
 		t.Errorf("LastRequest.URL returned %+v, want %+v",
-			decodeURL(LastRequest.URL.String()), want)
+			decodeBody(), want)
 	}
 
 	want = "/import"
@@ -98,7 +118,7 @@ func TestGroupOperations(t *testing.T) {
 	setup()
 	defer teardown()
 
-	client.UpdateGroup("company_id", "11", &Update{
+	client.UpdateGroup(context.TODO(), "company_id", "11", &Update{
 		Operation: "$set",
 		Properties: map[string]interface{}{
 			"Address":  "1313 Mockingbird Lane",
@@ -108,9 +128,9 @@ func TestGroupOperations(t *testing.T) {
 
 	want := "{\"$group_id\":\"11\",\"$group_key\":\"company_id\",\"$set\":{\"Address\":\"1313 Mockingbird Lane\",\"Birthday\":\"1948-01-01\"},\"$token\":\"e3bc4100330c35722740fb8c6f5abddc\"}"
 
-	if !reflect.DeepEqual(decodeURL(LastRequest.URL.String()), want) {
+	if !reflect.DeepEqual(decodeBody(), want) {
 		t.Errorf("LastRequest.URL returned %+v, want %+v",
-			decodeURL(LastRequest.URL.String()), want)
+			decodeBody(), want)
 	}
 
 	want = "/groups"
@@ -126,7 +146,7 @@ func TestUpdate(t *testing.T) {
 	setup()
 	defer teardown()
 
-	client.Update("13793", &Update{
+	client.Update(context.TODO(), "13793", &Update{
 		Operation: "$set",
 		Properties: map[string]interface{}{
 			"Address":  "1313 Mockingbird Lane",
@@ -136,9 +156,9 @@ func TestUpdate(t *testing.T) {
 
 	want := "{\"$distinct_id\":\"13793\",\"$set\":{\"Address\":\"1313 Mockingbird Lane\",\"Birthday\":\"1948-01-01\"},\"$token\":\"e3bc4100330c35722740fb8c6f5abddc\"}"
 
-	if !reflect.DeepEqual(decodeURL(LastRequest.URL.String()), want) {
+	if !reflect.DeepEqual(decodeBody(), want) {
 		t.Errorf("LastRequest.URL returned %+v, want %+v",
-			decodeURL(LastRequest.URL.String()), want)
+			decodeBody(), want)
 	}
 
 	want = "/engage"
@@ -153,7 +173,7 @@ func TestUpdate(t *testing.T) {
 func TestError(t *testing.T) {
 	ts = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
-		w.Write([]byte(`{"error": "some error", "status": 0}`))
+		w.Write([]byte(`{"error": "some error", "status": "0"}`))
 		LastRequest = r
 	}))
 
@@ -172,14 +192,15 @@ func TestError(t *testing.T) {
 			return
 		}
 
-		if terr.Message != "some error" {
+		if terr.Message != "error=some error; status=0; httpCode=200" &&
+			terr.Message != "error=some error; status=0; httpCode=200, body={\"error\": \"some error\", \"status\": \"0\"}" {
 			t.Errorf("Wrong body carried in the *ErrTrackFailed: %q", terr.Message)
 		}
 	}
 
 	client = New("e3bc4100330c35722740fb8c6f5abddc", ts.URL)
 
-	assertErrTrackFailed(client.Update("1", &Update{}))
-	assertErrTrackFailed(client.Track("1", "name", &Event{}))
-	assertErrTrackFailed(client.Import("1", "name", &Event{}))
+	assertErrTrackFailed(client.Update(context.TODO(), "1", &Update{}))
+	assertErrTrackFailed(client.Track(context.TODO(), "1", "name", &Event{}))
+	assertErrTrackFailed(client.Import(context.TODO(), "1", "name", &Event{}))
 }
