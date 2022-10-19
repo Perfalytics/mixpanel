@@ -26,6 +26,14 @@ func (err *MixpanelError) Error() string {
 	return "mixpanel: " + err.Err.Error()
 }
 
+func (err *MixpanelError) Unwrap() error {
+	if err == nil {
+		return nil
+	}
+
+	return err.Err
+}
+
 type ErrTrackFailed struct {
 	Message string
 }

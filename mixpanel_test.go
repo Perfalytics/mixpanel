@@ -3,6 +3,7 @@ package mixpanel
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -203,4 +204,13 @@ func TestError(t *testing.T) {
 	assertErrTrackFailed(client.Update(context.TODO(), "1", &Update{}))
 	assertErrTrackFailed(client.Track(context.TODO(), "1", "name", &Event{}))
 	assertErrTrackFailed(client.Import(context.TODO(), "1", "name", &Event{}))
+}
+
+func TestUnwrapCompatible(t *testing.T) {
+	mErr := &MixpanelError{Err: context.DeadlineExceeded}
+	err := error(mErr)
+
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Error("not compatible with unwrap")
+	}
 }
