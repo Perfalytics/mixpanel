@@ -277,7 +277,7 @@ func (m *mixpanel) sendImport(ctx context.Context, params interface{}, autoGeolo
 	// TODO(joey): If some records in the batch failed, return them so they can be retried.
 	if jsonBody.Status != "OK" {
 		errMsg := fmt.Sprintf("error=%s; status=%s; httpCode=%d, body=%s", jsonBody.Error, jsonBody.Status, resp.StatusCode, string(body))
-		return wrapErr(&ErrTrackFailed{Message: errMsg, HTTPCode: &resp.StatusCode, Body: body})
+		return wrapErr(&ErrTrackFailed{Message: errMsg, HTTPCode: resp.StatusCode, Body: body})
 	}
 
 	return nil
