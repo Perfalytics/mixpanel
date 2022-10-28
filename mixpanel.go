@@ -37,7 +37,7 @@ func (err *MixpanelError) Unwrap() error {
 type ErrTrackFailed struct {
 	Message  string
 	Body     []byte
-	HTTPCode *int
+	HTTPCode int
 }
 
 func (err *ErrTrackFailed) Error() string {
@@ -326,7 +326,7 @@ func (m *mixpanel) send(ctx context.Context, eventType string, params interface{
 
 	if jsonBody.Status != 1 {
 		errMsg := fmt.Sprintf("error=%s; status=%d; httpCode=%d", jsonBody.Error, jsonBody.Status, resp.StatusCode)
-		return wrapErr(&ErrTrackFailed{Message: errMsg})
+		return wrapErr(&ErrTrackFailed{Message: errMsg, HTTPCode: resp.StatusCode, Body: body})
 	}
 
 	return nil
